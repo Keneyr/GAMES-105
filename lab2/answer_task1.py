@@ -1,7 +1,9 @@
 import numpy as np
 import copy
+import math
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+from scipy.spatial import geometric_slerp
 # ------------- lab1里的代码 -------------#
 def load_meta_data(bvh_path):
     with open(bvh_path, 'r') as f:
@@ -68,6 +70,18 @@ def load_motion_data(bvh_path):
             motion_data.append(np.array(data).reshape(1,-1))
         motion_data = np.concatenate(motion_data, axis=0)
     return motion_data
+
+def align_vector(vec, target):
+    rotate_axis = np.cross(vec, target)
+    rotate_axis = rotate_axis / np.linalg.norm(rotate_axis)
+    cos = min(np.dot(vec, target) / (np.linalg.norm(vec) * np.linalg.norm(target)), 1.0)
+    theta = np.arccos(cos)
+    if theta < 0.1:
+        return R.identity()
+    # A rotation vector is a 3 dimensional vector which is co-directional to the axis of rotation and whose norm gives the angle of rotation
+    deltaRotation = R.from_rotvec(theta * rotate_axis)
+    return deltaRotation
+
 
 # ------------- 实现一个简易的BVH对象，进行数据处理 -------------#
 
@@ -199,7 +213,6 @@ class BVHMotion():
         pass
     
     #--------------------- 你的任务 -------------------- #
-    
     def decompose_rotation_with_yaxis(self, rotation):
         '''
         输入: rotation 形状为(4,)的ndarray, 四元数旋转
@@ -207,8 +220,21 @@ class BVHMotion():
         '''
         Ry = np.zeros_like(rotation)
         Rxz = np.zeros_like(rotation)
-        # TODO: 你的代码
         
+        # TODO:
+        # get RootJoint orientation
+        rotation_matrix = R.from_quat(rotation).as_matrix()
+        # get RootJoint y_axis
+        RootJoint_y_axis = rotation_matrix[:, 1]
+        # align RootJoint_y_axis to global_y_axis to get rotation delta_rotation
+        #r, _, = R.align_vectors(np.atleast_2d(np.array([0,1,0])), np.atleast_2d(RootJoint_y_axis))
+        r = align_vector(RootJoint_y_axis, np.array([0,1,0]))
+        delta_rotation = r.as_matrix()
+        # the rotation around Y aixs is R_y
+        R_y = np.dot(delta_rotation, rotation_matrix)
+        Ry = R.from_matrix(R_y).as_quat()
+        # the rotation around a axis from xz-plane
+        Rxz = R.from_matrix(np.transpose(R_y) * rotation_matrix).as_quat()
         return Ry, Rxz
     
     # part 1
@@ -228,12 +254,63 @@ class BVHMotion():
         
         res = self.raw_copy() # 拷贝一份，不要修改原始数据
         
-        # 比如说，你可以这样调整第frame_num帧的根节点平移
-        offset = target_translation_xz - res.joint_position[frame_num, 0, [0,2]]
-        res.joint_position[:, 0, [0,2]] += offset
-        # TODO: 你的代码
+        # for RootJoint, calcuate the translation offset at frame_num, and apply this offset to all the frames 
+        #offset = target_translation_xz - res.joint_position[frame_num, 0, [0,2]]
+        #res.joint_position[:, 0, [0,2]] += offset
+        
+        # TODO:
+        # Facing Frame Orientation
+        Ry, _, = res.decompose_rotation_with_yaxis(res.joint_rotation[frame_num, 0])
+        face_time_original_orientation = R.from_quat(Ry).as_matrix()
+        #r, _, = R.align_vectors(np.atleast_2d(np.array([target_facing_direction_xz[0],0,target_facing_direction_xz[1]])), np.atleast_2d(np.array([0,0,1])))
+        r = align_vector(np.array([0,0,1]), np.array([target_facing_direction_xz[0],0,target_facing_direction_xz[1]]))
+        face_time_target_orientation = r.as_matrix()
+        # now our task becomes transform bvh character target direction to given target direction
+        transformation_matrix = np.dot(face_time_target_orientation, np.transpose(face_time_original_orientation))
+        frames = res.joint_rotation.shape[0]
+        # 注意这里也是深拷贝
+        original_rootjoint_position = copy.deepcopy(res.joint_position[frame_num, 0])
+        target_rootjoint_position = np.array([target_translation_xz[0], 0 ,target_translation_xz[1]])
+        
+        for i in range(0, frames):
+            # update RootJoint Orientation
+            root_joint_orientation = res.joint_rotation[i, 0]
+            new_rotation_matrix = np.dot(transformation_matrix, R.from_quat(root_joint_orientation).as_matrix())
+            res.joint_rotation[i, 0] = R.from_matrix(new_rotation_matrix).as_quat()
+            # update RootJoint Translation
+            root_origin_offset = res.joint_position[i, 0] - original_rootjoint_position
+            new_translation =  target_rootjoint_position + np.dot(transformation_matrix, root_origin_offset)
+            res.joint_position[i, 0, [0,2]] = new_translation[[0,2]]
+        
         return res
 
+def rot_slerp(rot_a, rot_b, alpha):
+    """
+    rot_a: M x 4
+    rot_b: M x 4
+    w: scalar
+    """
+    #ret_rot = geometric_slerp(bvh_motion.joint_rotation[integer_lower_frame_idx, i], bvh_motion.joint_rotation[integer_upper_frame_idx, i], alpha)
+    ret_rot = np.empty_like(rot_a)
+    for joint_idx in range(len(rot_a)):
+        key_rots = R.from_quat([rot_a[joint_idx], rot_b[joint_idx]])
+        slerp = Slerp([0, 1], key_rots)
+        ret_rot[joint_idx] = slerp([alpha]).as_quat()
+    return ret_rot
+
+def frame_linear_interpolate(actual_frame, bvh_motion):
+    """
+    sample the walk_bvh and run_bvh at specified frame(time)
+    """
+    integer_lower_frame_idx = math.floor(actual_frame)
+    alpha = actual_frame - integer_lower_frame_idx
+    integer_upper_frame_idx = (integer_lower_frame_idx + 1) % (bvh_motion.motion_length)
+    # slerp quaterninon
+    ret_rot = rot_slerp(bvh_motion.joint_rotation[integer_lower_frame_idx], bvh_motion.joint_rotation[integer_upper_frame_idx], alpha)
+    # slerp position
+    ret_pos = (1 - alpha) * bvh_motion.joint_position[integer_lower_frame_idx] + alpha * bvh_motion.joint_position[integer_upper_frame_idx]
+
+    return ret_rot, ret_pos
 # part2
 def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
     '''
@@ -250,7 +327,25 @@ def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
     res.joint_rotation[...,3] = 1.0
 
     # TODO: 你的代码
-    
+    n = len(alpha)
+    # from frame_1 to frame_n
+    for cur_frame_idx in range(n):
+        # motion_1 frame nums: n_1, motion_2 frame nums: n_2
+        n_1 = bvh_motion1.motion_length
+        n_2 = bvh_motion2.motion_length
+
+        # corresponding frame_idx in motion_1, motion_2, attention, this frame_idx is float
+        frame_idx_1 = cur_frame_idx * (n_1 / n)
+        frame_idx_2 = cur_frame_idx * (n_2 / n)
+
+        # find the two sides integer frame for frame_idx_1 and linear interpolate
+        rot_1, pos_1 = frame_linear_interpolate(frame_idx_1, bvh_motion1)
+        # find the two sides integer frame  for frame_idx_2 and linear interpolate
+        rot_2, pos_2 = frame_linear_interpolate(frame_idx_2, bvh_motion2)
+
+        # blend motion
+        res.joint_rotation[cur_frame_idx, ...] = rot_slerp(rot_1, rot_2, alpha[cur_frame_idx])
+        res.joint_position[cur_frame_idx, ...] = (1 - alpha[cur_frame_idx]) * pos_1 + alpha[cur_frame_idx] * pos_2
     return res
 
 # part3
@@ -267,6 +362,30 @@ def build_loop_motion(bvh_motion):
     from smooth_utils import build_loop_motion
     return build_loop_motion(res)
 
+def find_nearest_pose(target_pose, motion_poses):
+    """
+    find the most similar pose in motion_pose for target_pose, only consider joint_rotation
+    target_pose: M x 4
+    motion_pose: N x M x 4
+    """
+    def pose_distance(pose_a, pose_b):
+        res = 0
+        for i in range(len(pose_a)):
+            # the distance between two joints
+            res += np.linalg.norm(pose_a[i] - pose_b[i])
+        return res
+    
+    min_distance = float("inf")
+    res_frame = 0  
+    for i in range(len(motion_poses)):
+        cur_pose = motion_poses[i]
+        # calculate the similarity between target_pose and cur_pose
+        distance = pose_distance(cur_pose, target_pose)
+        if distance < min_distance:
+            min_distance = distance
+            res_frame = i
+    return res_frame        
+
 # part4
 def concatenate_two_motions(bvh_motion1, bvh_motion2, mix_frame1, mix_time):
     '''
@@ -280,8 +399,50 @@ def concatenate_two_motions(bvh_motion1, bvh_motion2, mix_frame1, mix_time):
     
     # TODO: 你的代码
     # 下面这种直接拼肯定是不行的(
-    res.joint_position = np.concatenate([res.joint_position[:mix_frame1], bvh_motion2.joint_position], axis=0)
-    res.joint_rotation = np.concatenate([res.joint_rotation[:mix_frame1], bvh_motion2.joint_rotation], axis=0)
+    #res.joint_position = np.concatenate([res.joint_position[:mix_frame1], bvh_motion2.joint_position], axis=0)
+    #res.joint_rotation = np.concatenate([res.joint_rotation[:mix_frame1], bvh_motion2.joint_rotation], axis=0)
     
+    # change bvh_motion2 to loop animation, since mix_time may be to large for bvh_motion2
+    bvh_motion2 = build_loop_motion(bvh_motion2)
+    motion = bvh_motion2
+    pos = motion.joint_position[-1, 0, [0,2]]
+    rot = motion.joint_rotation[-1,0]
+    facing_axis = R.from_quat(rot).apply(np.array([0,0,1])).flatten()[[0,2]]
+    new_motion = motion.translation_and_rotation(0, pos, facing_axis)
+
+    # for bvh_motion1, it's going to blend motion at mix_frame1, but which frame for bvh_motion2?
+    # we need to find the most similar pose in bvh_motion2 for mix_frame1 at bvh_motion1
+    target_pose = bvh_motion1.joint_rotation[mix_frame1]
+    mix_frame2 = find_nearest_pose(target_pose, bvh_motion2.joint_rotation)
+
+    # in case the mix_frame2 + mix_time > bvh_motion2.motion_length
+    bvh_motion2.append(new_motion)
+
+    # start blending
+    # let bvh_motion2's face time coordinate system at mix_frame2 the same with bvh1 at mix_frame1
+    target_face_time_pos = bvh_motion1.joint_position[mix_frame1, 0, [0,2]]
+    target_root_ori = bvh_motion1.joint_rotation[mix_frame1, 0]
+    target_face_direction_xz = R.from_quat(target_root_ori).apply(np.array([0,0,1])).flatten()[[0,2]]
+    bvh_motion2 = bvh_motion2.translation_and_rotation(mix_frame2, target_face_time_pos, target_face_direction_xz)
+
+    cur_frame1 = mix_frame1
+    cur_frame2 = mix_frame2
+    for i in range(mix_time):
+        cur_frame1 += 1
+        cur_frame2 += 1
+        # interpoloate between bvh_motion1[mix_frame1] and bvh_motion2[mix_frame2]
+        # (1-alpha) * bvh_motion1[mix_frame1] + alpha * bvh_motion2[mix_frame2], alpha: from 0 to 1
+        alpha = i / (mix_time - 1)
+        pos_a = bvh_motion1.joint_position[cur_frame1]
+        pos_b = bvh_motion2.joint_position[cur_frame2]
+        rot_a = bvh_motion1.joint_rotation[cur_frame1]
+        rot_b = bvh_motion2.joint_rotation[cur_frame2]
+        # blend motion
+        res.joint_rotation[cur_frame1, ...] = rot_slerp(rot_a, rot_b, alpha)
+        res.joint_position[cur_frame1, ...] = (1 - alpha) * pos_a + alpha * pos_b
+    
+    # let the motion after [cur_frame1 + mix_time, inf] is bvh_motion2
+    res.joint_position = np.concatenate([res.joint_position[:cur_frame1], bvh_motion2.joint_position[cur_frame2:]], axis=0)
+    res.joint_rotation = np.concatenate([res.joint_rotation[:cur_frame1], bvh_motion2.joint_rotation[cur_frame2:]], axis=0)
     return res
 

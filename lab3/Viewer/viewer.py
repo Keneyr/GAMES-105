@@ -204,7 +204,7 @@ class SimpleViewer(ShowBase):
         
         self.setFrameRateMeter(True)
         globalClock.setMode(ClockObject.MLimited)
-        globalClock.setFrameRate(60)
+        globalClock.setFrameRate(10)
         
         self.load_ground()
         
@@ -303,7 +303,7 @@ class SimpleViewer(ShowBase):
         self.render.setShaderAuto(True)
 
     
-    def create_joint(self, link_id, position, end_effector=False):
+    def create_joint(self, link_id, position, joint_name, end_effector=False):
         # create a joint
         box = self.loader.loadModel("material/GroundScene.egg")
         node = self.render.attachNewNode(f"joint{link_id}")
@@ -315,6 +315,11 @@ class SimpleViewer(ShowBase):
             tex = self.create_texture([0,1,0,1], f"joint{link_id}_tex")
             box.setTexture(tex, 1)
         box.setScale(0.01,0.01,0.01)
+        # hard code, lKnee lShoulder
+        if joint_name == "lKnee" or joint_name == "lShoulder":
+            box.setScale(0.05,0.05,0.05)
+        if joint_name == "RootJoint":
+            box.setScale(0.04,0.04,0.04)
         node.setPos(self.render, *position)
         return node
     
@@ -431,7 +436,7 @@ class SimpleViewer(ShowBase):
         # joint_pos = np.concatenate([body_pos[0:1], joint_pos], axis=0)
         total_mass = 0
         for i in range(body_pos.shape[0]):
-            joint.append(self.create_joint(i, joint_pos[i], 'end' in joint_name[i]))
+            joint.append(self.create_joint(i, joint_pos[i], joint_name[i], 'end' in joint_name[i]))
             if i < body_pos.shape[0]:
                 body.append(self.create_link(i, body_pos[i], scale[i], rot = body_rot[i] if body_rot is not None else None))
                 body[-1].wrtReparentTo(joint[-1])
@@ -724,4 +729,13 @@ class SimpleViewer(ShowBase):
         quat = pc.Quat(rot[3], rot[0], rot[1], rot[2])
         arrow.setQuat(quat)
         return arrow
+    
+    def create_arrow2(self, pos, lookdirection, color):
+        from .visualize_utils import draw_arrow
+        arrow = self.render.attachNewNode("arrow")
+        draw_arrow(arrow, 0.1, 0.1, color)
+        arrow.setPos(*pos)
+        arrow.lookAt(*lookdirection)
+        return arrow
+
     

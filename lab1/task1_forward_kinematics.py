@@ -53,7 +53,12 @@ def part3_retarget(viewer, T_pose_bvh_path, A_pose_bvh_path):
     joint_name, joint_parent, joint_offset = part1_calculate_T_pose(T_pose_bvh_path)
     # A-pose的动作数据
     retarget_motion_data = part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path)
-
+    """
+    # debug, one pose for T-pose
+    joint_positions, joint_orientations = part2_forward_kinematics(joint_name, joint_parent, joint_offset, retarget_motion_data, 0)
+    viewer.show_pose(joint_name, joint_positions, joint_orientations)
+    viewer.run()
+    """
     #播放和上面完全相同
     frame_num = retarget_motion_data.shape[0]
     class UpdateHandle:
@@ -66,6 +71,7 @@ def part3_retarget(viewer, T_pose_bvh_path, A_pose_bvh_path):
     handle = UpdateHandle()
     viewer.update_func = handle.update_func
     viewer.run()
+    
 
 
 def main():
@@ -75,11 +81,11 @@ def main():
 
     # 请取消注释需要运行的代码
     # part1
-    # part1(viewer, bvh_file_path)
+    #part1(viewer, bvh_file_path)
 
     # part2
-    # part2_one_pose(viewer, bvh_file_path)
-    # part2_animation(viewer, bvh_file_path)
+    #part2_one_pose(viewer, "data/A_pose_run.bvh")
+    #part2_animation(viewer, bvh_file_path)
 
     # part3
     part3_retarget(viewer, "data/walk60.bvh", "data/A_pose_run.bvh")

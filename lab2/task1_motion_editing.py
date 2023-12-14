@@ -24,7 +24,7 @@ class ShowBVHUpdate():
         if not self.viewer.update_flag:
             return task.cont
         
-        speed_inv = 1 # 控制播放速度的整数,越大越慢
+        speed_inv = 5 # 控制播放速度的整数,越大越慢
         for i in range(len(self.joint_name)):
             self.viewer.set_joint_position_orientation(self.joint_name[i],
                                                        self.translation[self.cur_frame//speed_inv, i, :],
@@ -70,12 +70,26 @@ def part2_interpolate(viewer, v):
     run_forward = run_forward.translation_and_rotation(0, np.array([0,0]), np.array([0,1]))
     
     # 计算插值系数
-    v1 = (walk_forward.joint_position[-1,0,2] / walk_forward.motion_length)*60
-    v2 = (run_forward.joint_position[-1,0,2] / run_forward.motion_length)*60
+
+    # walk velocity
+    v1 = (walk_forward.joint_position[-1,0,2] / walk_forward.motion_length) * 60
+    #v1 = (walk_forward.joint_position[-1,0,2] / 1)
+    # run velocity
+    v2 = (run_forward.joint_position[-1,0,2] / run_forward.motion_length) * 60
+    #v2 = (walk_forward.joint_position[-1,0,2] / 0.75)
+    
     blend_weight = (v-v1)/(v2-v1)
+    #blend_weight = (1.5-v1)/(v2-v1)
+    
+    # new motion distance
     distance = (1-blend_weight)*walk_forward.joint_position[-1,0,2] + blend_weight*run_forward.joint_position[-1,0,2]
-    cycle_time = np.around(distance / v*60).astype(np.int32)
-    alpha = np.ones((cycle_time,)) * blend_weight
+    # new motion frames
+    new_frame = np.around(distance / v * 60).astype(np.int32)
+    #cycle_time = np.around(distance / v).astype(np.int32)
+    
+    # new motion blend_weight
+    #alpha = np.ones((new_frame,)) * blend_weight
+    alpha = np.ones((new_frame,)) * 0.8
     
     # 插值
     motion = blend_two_motions(walk_forward, run_forward, alpha)
@@ -135,10 +149,10 @@ def main():
     # 请自行取消需要的注释并更改测试setting_id
     # 请不要同时取消多个注释，否则前者会被后者覆盖
     
-    part1_translation_and_rotation(viewer, 0) # 数字代表不同的测试setting
-    # part2_interpolate(viewer, 1) # 数字代表不同期望的前进速度
-    # part3_build_loop(viewer)
-    # part4_concatenate(viewer, 0) # 数字代表不同的测试setting
+    # part1_translation_and_rotation(viewer, 2) # 数字代表不同的测试setting
+    #part2_interpolate(viewer, 1) # 数字代表不同期望的前进速度
+    #part3_build_loop(viewer)
+    part4_concatenate(viewer, 0) # 数字代表不同的测试setting
     viewer.run()
     
 if __name__ == '__main__':

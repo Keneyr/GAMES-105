@@ -10,14 +10,15 @@ class PDController:
         self.cnt = 0
         self.get_pose = None
         pass
-    
+    # apply joint torque according to target quaternion, child body(link): torque, parent body(link): -torque
     def apply_pd_torque(self):
         pose = self.get_pose(self.cnt)
         torque = part1_cal_torque(pose, self.physics_info)
-        torque[0] = np.zeros_like(torque[0])
+
+        # torque[0] = np.zeros_like(torque[0])
         self.viewer.set_torque(torque)
         self.cnt += 1
-
+    # hand of God, in case the character fall down
     def apply_root_force_and_torque(self):
         position, pose, setting = self.get_pose(self.cnt)
         global_force, torque = part2_cal_float_base_torque(position[0], pose, self.physics_info
@@ -27,10 +28,10 @@ class PDController:
         self.viewer.set_torque(torque)
         self.viewer.set_root_force(global_force)
         self.cnt += 1
-    
+    # jacobian transpose control method: convert force onto COM ---> torque onto joints
     def apply_static_torque(self):
         motion = self.get_pose(self.cnt)
-        torque = part3_cal_static_standing_torque(motion, self.physics_info)
+        torque = part3_cal_static_standing_torque(self, motion, self.physics_info)
         torque[0] = np.zeros_like(torque[0])
         self.viewer.set_torque(torque)
         self.cnt += 1
@@ -66,9 +67,11 @@ def part2_root_force(viewer, setting=0):
     pos[1] = motion.joint_position[0][0][1] 
     if setting == 1:
         pos[1] += 0.12 #我们把人物往上提亿点
+    # let the character rootjoint position in bvh file align with our physics character rootjoint position
     motion = motion.translation(0, pos)
     joint_translation, joint_orientation = motion.batch_forward_kinematics(frame_id_list = [0],
                                                                            )
+    # pose at frame 0
     viewer.set_pose(motion.joint_name ,joint_translation[0], joint_orientation[0])
     
     pd_controller = PDController(viewer)
@@ -83,7 +86,9 @@ def part3_static_balance(viewer, setting):
     motion.adjust_joint_name(viewer.joint_name)
     pos = viewer.root_pos
     pos[1] = motion.joint_position[0][0][1]
+    # let the character rootjoint position in bvh file align with our physics character rootjoint position
     motion = motion.translation(0, pos)
+    # pose at frame 0
     joint_translation, joint_orientation = motion.batch_forward_kinematics(frame_id_list = [0],
                                                                            )
     viewer.set_pose(motion.joint_name ,joint_translation[0], joint_orientation[0])
@@ -97,9 +102,9 @@ def main():
     viewer = SimpleViewer(True) 
     # viewer.show_axis_frame()
     
-    part1_pd_control(viewer, 0) # 数字代表不同的测试setting
-    # part2_root_force(viewer, 0)
-    # part3_static_balance(viewer, 0)
+    #part1_pd_control(viewer, 0) # 数字代表不同的测试setting
+    #part2_root_force(viewer, 0)
+    part3_static_balance(viewer, 0)
     viewer.run()
     
 if __name__ == '__main__':

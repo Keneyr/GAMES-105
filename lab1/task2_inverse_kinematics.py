@@ -37,18 +37,21 @@ class MetaData:
             path2.append(self.joint_parent[path2[-1]])
         
         # 合并路径，消去重复的节点
+        # after pop(), path1 don't include RootJoint, but path2 includes RootJoint
         while path1 and path2 and path2[-1] == path1[-1]:
             path1.pop()
             a = path2.pop()
-            
+         
         path2.append(a)
+        # a chain without duplication joints:
+        # from root joint(means this joint is the static joint) 
+        # to the RootJoint(means the actually root joint in skeleton tree structure) 
+        # then to the end effecotr
         path = path2 + list(reversed(path1))
         path_name = [self.joint_name[i] for i in path]
         return path, path_name, path1, path2
-    
 
-
-
+# root_joint means this joint doesn't change it's position but can change it's orientation
 def part1_simple(viewer, target_pos):
     """
     完成part1_inverse_kinematics，我们将根节点设在腰部，末端节点设在左手
@@ -112,7 +115,7 @@ def part2(viewer, bvh_name):
     bvh_joint_name, bvh_joint_parent, bvh_offset = part1_calculate_T_pose(bvh_name)
     joint_name, _, joint_initial_position = viewer.get_meta_data()
     idx = [joint_name.index(name) for name in bvh_joint_name]
-    meta_data = MetaData(bvh_joint_name, bvh_joint_parent, joint_initial_position[idx], 'lShoulder', 'lWrist')
+    meta_data = MetaData(bvh_joint_name, bvh_joint_parent, joint_initial_position[idx], 'lTorso_Clavicle', 'lWrist')
     class UpdateHandle:
         def __init__(self, meta_data, motion_data, joint_offset):
             self.meta_data = meta_data
@@ -141,6 +144,7 @@ def bonus(viewer, left_target_pos, right_target_pos):
     
     # 为了兼容如此设置，实际上末端节点应当为左右手
     meta_data = MetaData(joint_name, joint_parent, joint_initial_position, 'lToeJoint_end', 'lWrist_end')
+    meta_data_r = MetaData(meta_data.joint_name, meta_data.joint_parent, meta_data.joint_initial_position, 'rToeJoint_end', 'rWrist_end')
     joint_position = viewer.get_joint_positions()
     joint_orientation = viewer.get_joint_orientations()
     
@@ -154,7 +158,7 @@ def bonus(viewer, left_target_pos, right_target_pos):
         def update_func(self, viewer):
             left_target_pos = np.array(self.left_marker.getPos())
             right_target_pos = np.array(self.right_marker.getPos())
-            self.joint_position, self.joint_orientation = bonus_inverse_kinematics(meta_data, self.joint_position, self.joint_orientation, left_target_pos, right_target_pos)
+            self.joint_position, self.joint_orientation = bonus_inverse_kinematics(meta_data, meta_data_r, self.joint_position, self.joint_orientation, left_target_pos, right_target_pos)
             viewer.show_pose(joint_name, self.joint_position, self.joint_orientation)
     handle = UpdateHandle(left_marker, right_marker, joint_position, joint_orientation)
     handle.update_func(viewer)
@@ -168,14 +172,14 @@ def main():
     viewer = SimpleViewer()
     
     # part1
-    # part1_simple(viewer, np.array([0.5, 0.75, 0.5]))
-    # part1_hard(viewer, np.array([0.5, 0.5, 0.5]))
-    # part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
+    part1_simple(viewer, np.array([0.5, 0.75, 0.5]))
+    #part1_hard(viewer, np.array([0.5, 0.5, 0.5]))
+    #part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
     
     # part2
-    # part2(viewer, 'data/walk60.bvh')
+    #part2(viewer, 'data/walk60.bvh')
     
-    # bonus(viewer, np.array([0.5, 0.5, 0.5]), np.array([0, 0.5, 0.5]))
+    #bonus(viewer, np.array([0.5, 0.5, 0.5]), np.array([0, 0.5, 0.5]))
 
 if __name__ == "__main__":
     main()
