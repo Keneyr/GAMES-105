@@ -4,8 +4,15 @@ lKnee
 lAnkle
 lToeJoint
 lToeJoint_end
+rHip
+rKnee
+rAnkle
+rToeJoint
+rToeJoint_end
 pelvis_lowerback
 lowerback_torso
+torso_head
+torso_head_end
 lTorso_Clavicle
 lShoulder
 lElbow
@@ -16,10 +23,3 @@ rShoulder
 rElbow
 rWrist
 rWrist_end
-torso_head
-torso_head_end
-rHip
-rKnee
-rAnkle
-rToeJoint
-rToeJoint_end

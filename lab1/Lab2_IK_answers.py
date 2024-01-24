@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
+import rotation_convension
 
 # get the rotation as quterninon form from aligning vector v_1 to v_2
 def get_rotation_scipy(v_1, v_2):
@@ -68,11 +69,12 @@ def part1_inverse_kinematics_Jacobian_PseudoInverse(path,target_pose,chain_posit
     steps = 0
     learning_rate = 0.1
     
-    # change numpy to pytorch data structure
-    rotation_chain_tensor = torch.tensor(chain_relative_rotations, requires_grad = True, dtype = torch.float32)
-    offset_chain_tensor = torch.tensor(chain_relative_offsets, requires_grad = False, dtype = torch.float32)
-    target_position = torch.tensor(target_pose, requires_grad=False, dtype=torch.float32)
-    
+    # change numpy to pytorch data structure, use angleAxis form
+    chain_rotation_tensor = torch.tensor(chain_relative_rotations, requires_grad = True, dtype = torch.float32)
+    chain_offset_tensor = torch.tensor(chain_relative_offsets, requires_grad = False, dtype = torch.float32)
+    target_position = torch.tensor(target_pose, requires_grad = False, dtype=torch.float32)
+    start_position = torch.tensor(chain_positions[0], requires_grad = False, dtype=torch.float32)
+    print(chain_positions)
     """
     F(theta) = 1/2 ||f(theta) - target_position||^2
     Jacobian = gradient_F
@@ -82,8 +84,30 @@ def part1_inverse_kinematics_Jacobian_PseudoInverse(path,target_pose,chain_posit
 
     you can change a vector v to pure quaternion [0, v]
     """
+
     while steps < STEPS_THRESHOLD:
-        pass
+        
+        # define the FK function in IK chain, s = FK(theta)
+        cur_position = start_position
+        cur_orientain = chain_rotation_tensor[0]
+        for i in range(1, len(path)):
+            cur_position = cur_position + torch.matmul(rotation_convension.quaternion_to_matrix(cur_orientain), chain_offset_tensor[i])
+            cur_orientain = rotation_convension.quaternion_multiply(cur_orientain, chain_rotation_tensor[i])
+        
+        # the end effector reached the target position in tolerance
+        if torch.linalg.norm(target_position - cur_position) < DISTANCE_THRESHOLD:
+            break
+        # change tensor to scalar
+        cur_position.sum().backward(retain_graph=True)
+        # get the gradient of cur_position with respect to chain_rotation_tensor
+        jacobian = chain_rotation_tensor.grad
+        #print(jacobian)
+        #psedu_inverse_jacobian = torch.matmul(torch.transpose(jacobian, 0, 1), torch.inverse(torch.matmul(jacobian, torch.transpose(jacobian, 0, 1))))
+        
+        delta = torch.cat([cur_position - target_position, torch.zeros(1)], -1)
+        #update relative rotation : theta
+        chain_rotation_tensor = chain_rotation_tensor - learning_rate * jacobian * delta
+    # update chain data    
     return chain_positions, chain_orientations, chain_relative_rotations
 
 def part1_inverse_kinematics_CCD(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets):
@@ -238,7 +262,7 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations, tar
     #chain_positions, chain_orientations, chain_relative_rotations = part1_inverse_kinematics_CCD(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets)
     chain_positions, chain_orientations, chain_relative_rotations = part1_inverse_kinematics_Jacobian_PseudoInverse(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets)
     #chain_positions, chain_orientations, chain_relative_rotations = part1_inverse_kinematics_Jacobian_DLS(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets)
-    chain_positions, chain_orientations, chain_relative_rotations = part1_inverse_kinematics_FABRIK(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets)
+    #chain_positions, chain_orientations, chain_relative_rotations = part1_inverse_kinematics_FABRIK(path,target_pose,chain_positions,chain_orientations,chain_relative_rotations,chain_relative_offsets)
     
     """
     step4: update bone data, index of i-1, and i+1 is becuase this framework...
@@ -270,6 +294,7 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations, tar
         # normal joints
         else:
             # p_1 = p_0 + Q_0 * L_0
+            #(x,y,z,w)
             joint_positions[i] = joint_positions[joint_parents[i]] + np.dot(R.from_quat(joint_orientations[joint_parents[i]]).as_matrix(), joint_relative_offsets[i])
             # Q_1 = Q_0 * R_1
             joint_orientations[i] = (R.from_quat(joint_orientations[joint_parents[i]]) * R.from_quat(joint_relative_rotations[i])).as_quat()

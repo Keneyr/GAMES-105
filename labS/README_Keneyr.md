@@ -48,6 +48,19 @@ My best speed is 9fps,
 
 I will update the code as I figure out a better way...
 
+<p align=center>
+<img src='results/skinning-deformation.png' width='100%'> 
+</p>
+
+<p align=center>
+<img src='results/DQS.png' width='100%'> 
+</p>
+
+<p align=center>
+<img src='results/correct_lbs.png' width='100%'> 
+</p>
+
+
 
 
 

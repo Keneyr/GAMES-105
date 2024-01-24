@@ -107,7 +107,7 @@ https://math.stackexchange.com/questions/360286/what-does-multiplication-of-two-
 ==Attention:== ```root_joint```, denotes as ```path[0]```means this joint doesn't change it's position and orientation.
 
 
-##### IK-simple
+##### IK-simple-CCD
 ```python
 # IK Chain-simple: path[] = [RootJoint ...... lWrist_end]
 # step1. init chain
@@ -142,6 +142,55 @@ for joint j:
     joint_ori[j] = joint_ori[parent_j] * joint_relative_rotation[j]
     joing_pos[j] = joint_pos[parent_j] + joint_ori[parent_j] * relative_offset[j]
 ```
+##### IK-simple-Jacobian
+
+http://www.andreasaristidou.com/publications/papers/IK_survey.pdf
+
+1. for each joint, toEnd, toTarget, get the rotation axis 
+$$
+a_i = RotationAixs(toEnd, toTarget)
+$$
+2. for each joint, Geometric Approach, get the partial derivative
+$$
+\frac{\partial f}{\partial \theta_i} = \lim_{\partial \theta_i \rightarrow 0} \frac{x' - x}{\delta \theta_i} = a_i \times r_i
+$$
+3. composite the jacobian Matrix, so if there are 10 joints, then the jacobian matrix is a $3 \times 10$ matrix, if there are two end effectors, then the jacobian matrix should be $6 \times 10$ matrix:
+$$
+\begin{bmatrix}
+\frac{\partial f}{\partial \theta_{ix}} & \frac{\partial f}{\partial \theta_{ix}} & \cdots\\
+\frac{\partial f}{\partial \theta_{iy}} & \frac{\partial f}{\partial \theta_{iy}} & \cdots\\
+\frac{\partial f}{\partial \theta_{iz}} & \frac{\partial f}{\partial \theta_{iz}} & \cdots\\
+\end{bmatrix}
+$$
+
+4. use jacobian transpose method or pesudo-inverse DLS
+4.1 jacobian transpose method
+$$
+\alpha = \frac{<e, JJ^Te>}{<JJ^Te, JJ^Te>}
+$$
+where,
+$$
+\Delta \theta = \alpha J^T e
+$$
+$$
+e = target_{pos} - endeffector_{pos}
+$$
+$$
+\theta += \Delta \theta
+$$
+4.2 jacobian pesudo-inverse DLS
+```python
+jacobian_square = jacobian * jacobian_transpose # 3 x 3
+jacobian_square += Damping * Damping * DampingIdentityMatrix
+EffectorDerivatives = target_pos - end_effector_pos
+delta_angle_aixs = jacobian_transpose * inv(jacobian_square) * EffectorDerivatives
+```
+5. update the joint(link) data, which means update the chain pose
+```
+delta_rotation = delta_angle_aixs.convert_2_quaternion()
+joint_orientation = delta_rotation * joint_orientation
+```
+
 ##### IK-hard
 ```
 path = [23,10,8,6,4,0,1,2,13,15,17,19,21]

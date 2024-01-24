@@ -68,6 +68,10 @@ This part will realize an interactive character animation, that is, through the 
 
 Obviously, it is common to use State Machine and Motion Matching method implementing interactive animation in Computer Games.
 
+<p align=center>
+<img src='results/motion_matching.png' width='100%'> 
+</p>
+
 ### State Machine
 
 
@@ -77,5 +81,9 @@ Obviously, it is common to use State Machine and Motion Matching method implemen
 
 
 ### Learning-based Method
+
+<p align=center>
+<img src='results/learning-based-motion.png' width='100%'> 
+</p>
 
 
